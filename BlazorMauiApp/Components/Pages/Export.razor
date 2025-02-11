@@ -1,0 +1,76 @@
+﻿@page "/export"
+
+@using Stimulsoft.Report;
+@using Stimulsoft.Report.Blazor;
+@using Stimulsoft.Report.Web;
+@using Stimulsoft.Report.Export;
+@using System.Text;
+
+<button @onclick="@ExportPdf">Export PDF</button>
+<button @onclick="@ExportHtml">Export HTML</button>
+<button @onclick="@SharePdf">Share PDF</button>
+
+<br /><br />
+<div>@((MarkupString)HtmlContent)</div>
+
+@code {
+    private StiReport Report = new StiReport();
+    private string HtmlContent = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var reportStream = await FileSystem.OpenAppPackageFileAsync("SimpleList.mrt");
+        Report.Load(reportStream);
+    }
+
+    private void ShowHtmlReport()
+    {
+        var service = new StiHtmlExportService();
+        service.RenderAsDocument = false;
+
+        var settings = new StiHtmlExportSettings();
+
+        using (var stream = new MemoryStream())
+        {
+            service.ExportHtml(Report, stream, settings);
+
+            var buffer = stream.ToArray();
+            HtmlContent = Encoding.UTF8.GetString(buffer);
+        }
+    }
+
+    private async Task ExportDocument(StiExportFormat format, string fileName, bool shareFile = false)
+    {
+        if (Report == null) return;
+
+        await Task.Run(() => Report.Render());
+
+        if (format == StiExportFormat.Html)
+        {
+            ShowHtmlReport();
+        }
+        else
+        {
+            var filePath = Path.Combine(FileSystem.Current.CacheDirectory, fileName);
+            using (var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+            {
+                Report.ExportDocument(StiExportFormat.Pdf, fileStream);
+            }
+
+            if (shareFile)
+            {
+                var file = new ShareFile(filePath);
+                await Share.Default.RequestAsync(new ShareFileRequest(fileName, file));
+            }
+            else
+            {
+                var file = new ReadOnlyFile(filePath);
+                await Launcher.OpenAsync(new OpenFileRequest(filePath, file));
+            }
+        }
+    }
+
+    private Task ExportPdf() => ExportDocument(StiExportFormat.Pdf, "Simple List.pdf");
+    private Task ExportHtml() => ExportDocument(StiExportFormat.Html, "Simple List.html");
+    private Task SharePdf() => ExportDocument(StiExportFormat.Pdf, "Simple List.pdf", true);
+}
